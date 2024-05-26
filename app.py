@@ -1,7 +1,5 @@
 import chess
 import chess.svg
-import pandas as pd
-import plotly.express as px
 import streamlit as st
 import streamlit_antd_components as sac
 
@@ -13,14 +11,22 @@ def main():
     st.set_page_config(page_title='Interactive Chess Board', layout='wide')
     st.title('Interactive Chess Board Visualisation')
     game_data = load_data()
-    op_data = pd.read_csv('games.csv')
+    category_descriptions = {
+        'Rapid': '10-60 minutes per player; balances deep strategic thinking with time pressure.',
+        'Blitz': '3-10 minutes per player; emphasizes quick thinking and immediate decision-making.',
+        'Bullet': '1-3 minutes per player; focuses on extremely fast moves and instant reactions.'
+    }
 
     st.sidebar.markdown('<h2 style="font-weight: bold; font-size: 25px; color : #9C7A97;">Plot Filters</h3>', unsafe_allow_html=True)
-    st.sidebar.markdown('<h2 style="font-style: italic; font-size: 10px;">These filters control the plots</h3>', unsafe_allow_html=True)
-
     category = st.sidebar.selectbox('Select Time Control Category', game_data['time_control_category'].unique())
+    if category in category_descriptions:
+        description_html = f'<p style="font-style: italic; font-size: 10px;">{category_descriptions[category]}</p>'
+        st.sidebar.markdown(description_html, unsafe_allow_html=True)
     filter_rated_plot = st.sidebar.selectbox("Filter Games by Rating", ["All", "Rated", "Non-Rated"])
     enable_selectbox = st.sidebar.checkbox("Include Time Increment?")
+    description_timeInc = f'<p style="font-style: italic; font-size: 10px;">Time increment adds extra seconds per move </p>'
+    st.sidebar.markdown(description_timeInc, unsafe_allow_html=True)
+    
     if enable_selectbox:
         # Define the specific increments you want to include
         specific_increments = [1, 2, 5, 10, 15,20, 30]
@@ -28,28 +34,34 @@ def main():
         increments_filtered = [increment for increment in game_data['increment'].unique() if increment in specific_increments]
         # Sort the filtered increments before displaying them
         sorted_increments = sorted(increments_filtered)
-        # Create the selectbox with the sorted, filtered increments
-        time_increment = st.sidebar.selectbox('Select Time Increment', sorted_increments)
-        
-    st.sidebar.markdown('<h2 style="font-weight: bold; font-size: 25px; color: #7EA2AA;">Game List Filters</h3>', unsafe_allow_html=True)
-    st.sidebar.markdown('<h2 style="font-style: italic; font-size: 10px;">These filters control the list of games in the chess board tab</h3>', unsafe_allow_html=True)
-    filter_rated = st.sidebar.selectbox("Filter Games by Rating", ["All", "Rated", "Non-Rated"], key="rating_filter")
-    filter_winner = st.sidebar.selectbox("Filter Games by Winner", ["All", "White", "Black"], key="winner_filter")
+
+    time_increment = None
+    if enable_selectbox:
+        specific_increments = [1, 2, 5, 10, 15, 20, 30]
+        increments_filtered = [increment for increment in game_data['increment'].unique() if increment in specific_increments]
+        time_increment = st.sidebar.selectbox('Select Time Increment', sorted(increments_filtered))
     include_rating = st.sidebar.checkbox("Include rating?")
     rating = st.sidebar.slider('Select The Rating Range', min_value=0, max_value=game_data['white_rating'].max(), step=100, value=(0, game_data['white_rating'].max()), disabled=not include_rating)
-    
-    col1, col2 = st.columns(2)
+    st.sidebar.markdown('<h2 style="font-weight: bold; font-size: 20px; color: #7EA2AA;">Additional Filters</h3>', unsafe_allow_html=True)
+    st.sidebar.markdown('<h2 style="font-style: italic; font-size: 10px;">These additinal filters control the list of games in the chess board tab</h3>', unsafe_allow_html=True)
+    filter_winner = st.sidebar.selectbox("Filter Games by Winner", ["All", "White", "Black"], key="winner_filter")
+
+
+
+
+    # Apply filters to the data
     filtered_data = game_data[game_data['time_control_category'] == category]
-    
-    if filter_rated_plot == "Rated":
-        filtered_data = filtered_data[filtered_data['rated'] == True]
-    elif filter_rated_plot == "Non-Rated":
-        filtered_data = filtered_data[filtered_data['rated'] == False]
-    else:
-        filtered_data = filtered_data
-    
+    if filter_rated_plot != "All":
+        is_rated = filter_rated_plot == "Rated"
+        filtered_data = filtered_data[filtered_data['rated'] == is_rated]
+
     if enable_selectbox and time_increment:
         filtered_data = filtered_data[filtered_data['increment'] == time_increment]
+
+    if include_rating:
+        lower, upper = rating
+        filtered_data = filtered_data[(filtered_data['white_rating'].between(lower, upper)) |
+                                    (filtered_data['black_rating'].between(lower, upper))]
         
     tab1, tab2 = st.tabs(["Statistical Plots", "Opening Details & Chess Board Display"])
     
@@ -57,21 +69,39 @@ def main():
         st.session_state.active_tab = "tab1"
         col1, col2 = st.columns(2)
         with col1:
-            fig3, most_played = plot_most_played_openings(filtered_data)
-            st.plotly_chart(fig3, use_container_width=True)
-            
-            fig2 = plot_top_openings(filtered_data)
-            st.plotly_chart(fig2, use_container_width=True)
-            
+            # Check if there is data to plot
+            if not filtered_data.empty:
+                fig3, most_played = plot_most_played_openings(filtered_data)
+                if fig3:
+                    st.plotly_chart(fig3, use_container_width=True)
+                else:
+                    st.write("No plot available with these filters.")
 
-            
+                fig2 = plot_top_openings(filtered_data)
+                if fig2:
+                    st.plotly_chart(fig2, use_container_width=True)
+                else:
+                    st.write("No plot available with these filters.")
+            else:
+                st.write("No plot available with these filters.")
+        
         with col2:
-            fig4 = plot_opening_vs_game_duration(filtered_data,most_played)
-            st.plotly_chart(fig4, use_container_width=True)
-            
-            fig1 = plot_winning_rates(filtered_data)
-            st.plotly_chart(fig1, use_container_width=True)
-            
+            # Check if there is data to plot
+            if not filtered_data.empty:
+                fig4 = plot_opening_vs_game_duration(filtered_data, most_played)
+                if fig4:
+                    st.plotly_chart(fig4, use_container_width=True)
+                else:
+                    st.write("No plot available with these filters.")
+
+                fig1 = plot_winning_rates(filtered_data)
+                if fig1:
+                    st.plotly_chart(fig1, use_container_width=True)
+                else:
+                    st.write("No plot available with these filters.")
+            else:
+                st.write("No plot available with these filters.")
+
 
             
     with tab2:
@@ -101,7 +131,7 @@ def main():
     
             if st.session_state['tabs'] is not None:
                     if st.session_state['tabs'] == 'Opening move':
-                        display_moves_list(op_data, selected_opening,game_data)
+                        display_moves_list(game_data, selected_opening,game_data)
                     if st.session_state['tabs'] == 'Time control':
                         plot_time_control_cat(game_data, selected_opening)
                     if st.session_state.get('tabs') == 'Winners Percentage':
@@ -111,9 +141,9 @@ def main():
                         if not opening_games.empty:
 
                             # Apply the rated filter
-                            if filter_rated == "Rated":
+                            if filter_rated_plot == "Rated":
                                 filtered_games = display_data[display_data['rated'] == True]
-                            elif filter_rated == "Non-Rated":
+                            elif filter_rated_plot == "Non-Rated":
                                 filtered_games = display_data[display_data['rated'] == False]
                             else:
                                 filtered_games = display_data  # Show all games if 'All' is selected
@@ -129,7 +159,7 @@ def main():
                                 # Get the selected rating range
                                 # Extract lower and upper bounds of the selected range
                                 rating_lower_bound, rating_upper_bound = rating
-                                # Adjust the bounds with +-150
+                                # Adjust the bounds with +-50
                                 rating_lower_bound -= 50
                                 rating_upper_bound += 50
                                 filtered_games = filtered_games[
@@ -142,7 +172,19 @@ def main():
                                 
                             if filtered_games.empty:
                                 st.write("No existing games match the selected filters.")
-                            else :
+                            else:
+                                # Rename columns before displaying
+                                filtered_games = filtered_games.rename(columns={
+                                    'id': 'ID',
+                                    'rated': 'Rated',
+                                    'turns': 'Turns',
+                                    'white_rating': 'White Rating',
+                                    'black_rating': 'Black Rating',
+                                    'winner': 'Winner',
+                                    'victory_status': 'Victory Status',
+                                    'time_control_category': 'Category'
+                                })
+
                                 # Determine the number of rows for setting the dataframe height
                                 num_rows = len(filtered_games)
                                 if num_rows == 1:
@@ -154,6 +196,7 @@ def main():
 
                                 # Display the dataframe with the filtered data
                                 st.dataframe(filtered_games, height=height, hide_index=True)
+
                                 
             game_ID = st.selectbox('Select the Game By ID', display_data['id'].unique())
             game_moves = game_data[game_data['id'] == game_ID]['moves']
